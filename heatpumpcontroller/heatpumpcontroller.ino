@@ -2,6 +2,9 @@
 // * Panasonic CKP series remote number A75C2317/CWA75C2317, which replaces A75C559/CWA75C559 and A75C2295
 // at least according to ebay!
 //
+// Almost all of this is adapted from the excellent: https://github.com/ToniA/arduino-xpl-heatpump-controller
+// With some excellent help from: https://github.com/shirriff/Arduino-IRremote
+//
 // Connect an IR led (with 1k resistor in series)
 // between GND and digital pin 3
 //
@@ -389,7 +392,7 @@ if (Serial.read() != -1) {
 
 
 
-The following shit is the xPl stuff we don't need
+The following is the xPl stuff we don't need
 
 
 
