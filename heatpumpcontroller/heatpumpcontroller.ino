@@ -15,6 +15,10 @@
 // Connect with 1 kOhm resistor in series to GND
 #define IR_LED_PIN        3
 
+// *************************************
+// Timing constants adn codes
+//**************************************
+
 // Panasonic CKP timing constants
 #define PANASONIC_AIRCON1_HDR_MARK   3400
 #define PANASONIC_AIRCON1_HDR_SPACE  3500
@@ -46,6 +50,48 @@
 #define PANASONIC_AIRCON1_HS_AUTO    0x08 // Horizontal swing
 #define PANASONIC_AIRCON1_HS_MANUAL  0x00
 
+// Panasonic DKE timing constants
+#define PANASONIC_AIRCON2_HDR_MARK   3500
+#define PANASONIC_AIRCON2_HDR_SPACE  1800
+#define PANASONIC_AIRCON2_BIT_MARK   420
+#define PANASONIC_AIRCON2_ONE_SPACE  1350
+#define PANASONIC_AIRCON2_ZERO_SPACE 470
+#define PANASONIC_AIRCON2_MSG_SPACE  10000
+
+// Panasonic DKE codes
+#define PANASONIC_AIRCON2_MODE_AUTO  0x00 // Operating mode
+#define PANASONIC_AIRCON2_MODE_HEAT  0x40
+#define PANASONIC_AIRCON2_MODE_COOL  0x30
+#define PANASONIC_AIRCON2_MODE_DRY   0x20
+#define PANASONIC_AIRCON2_MODE_FAN   0x60
+#define PANASONIC_AIRCON2_MODE_OFF   0x00 // Power OFF
+#define PANASONIC_AIRCON2_MODE_ON    0x01
+#define PANASONIC_AIRCON2_TIMER_CNL  0x08
+#define PANASONIC_AIRCON2_FAN_AUTO   0xA0 // Fan speed
+#define PANASONIC_AIRCON2_FAN1       0x30
+#define PANASONIC_AIRCON2_FAN2       0x40
+#define PANASONIC_AIRCON2_FAN3       0x50
+#define PANASONIC_AIRCON2_FAN4       0x60
+#define PANASONIC_AIRCON2_FAN5       0x70
+#define PANASONIC_AIRCON2_VS_AUTO    0x0F // Vertical swing
+#define PANASONIC_AIRCON2_VS_UP      0x01
+#define PANASONIC_AIRCON2_VS_MUP     0x02
+#define PANASONIC_AIRCON2_VS_MIDDLE  0x03
+#define PANASONIC_AIRCON2_VS_MDOWN   0x04
+#define PANASONIC_AIRCON2_VS_DOWN    0x05
+#define PANASONIC_AIRCON2_HS_AUTO    0x0D // Horizontal swing
+#define PANASONIC_AIRCON2_HS_MIDDLE  0x06
+#define PANASONIC_AIRCON2_HS_LEFT    0x09
+#define PANASONIC_AIRCON2_HS_MLEFT   0x0A
+#define PANASONIC_AIRCON2_HS_MRIGHT  0x0B
+#define PANASONIC_AIRCON2_HS_RIGHT   0x0C
+
+
+// ************************************************
+// Signal building
+//*************************************************
+
+// CKP code signal start
 // Send the Panasonic CKP code
 
 void sendPanasonicCKP(byte operatingMode, byte fanSpeed, byte temperature, byte swingV, byte swingH)
@@ -162,9 +208,140 @@ void sendPanasonicCKPOnOff(boolean powerState)
   space(0);
 }
 
+// CKP code end
 
-//not sure what this is for! Left in in case - may need to take out as could be part of Midea IR code...
-// Send a byte over IR
+//DKE code start
+
+// Send the Panasonic DKE code
+
+void sendPanasonicDKE(byte operatingMode, byte fanSpeed, byte temperature, byte swingV, byte swingH)
+{
+  byte DKE_template[] = { 0x02, 0x20, 0xE0, 0x04, 0x00, 0x00, 0x00, 0x06, 0x02, 0x20, 0xE0, 0x04, 0x00, 0x48, 0x2E, 0x80, 0xA3, 0x0D, 0x00, 0x0E, 0xE0, 0x00, 0x00, 0x01, 0x00, 0x06, 0xA2 };
+  byte checksum = 0xF4;
+
+  DKE_template[13] = operatingMode;
+  DKE_template[14] = temperature << 1;
+  DKE_template[16] = fanSpeed | swingV;
+  DKE_template[17] = swingH;
+
+  // Checksum
+
+  for (int i=0; i<26; i++) {
+    checksum += DKE_template[i];
+  }
+
+  DKE_template[26] = checksum;
+
+  // 40 kHz PWM frequency
+  enableIROut(40);
+
+  // Header
+  mark(PANASONIC_AIRCON2_HDR_MARK);
+  space(PANASONIC_AIRCON2_HDR_SPACE);
+
+  // First 8 bytes
+  for (int i=0; i<8; i++) {
+    sendIRByte(DKE_template[i], PANASONIC_AIRCON2_BIT_MARK, PANASONIC_AIRCON2_ZERO_SPACE, PANASONIC_AIRCON2_ONE_SPACE);
+  }
+
+  // Pause
+  mark(PANASONIC_AIRCON2_BIT_MARK);
+  space(PANASONIC_AIRCON2_MSG_SPACE);
+
+  // Header
+  mark(PANASONIC_AIRCON2_HDR_MARK);
+  space(PANASONIC_AIRCON2_HDR_SPACE);
+
+  // Last 19 bytes
+  for (int i=8; i<27; i++) {
+    sendIRByte(DKE_template[i], PANASONIC_AIRCON2_BIT_MARK, PANASONIC_AIRCON2_ZERO_SPACE, PANASONIC_AIRCON2_ONE_SPACE);
+  }
+
+  mark(PANASONIC_AIRCON2_BIT_MARK);
+  space(0);
+}
+
+// Send the Midea code
+
+void sendMidea(byte operatingMode, byte fanSpeed, byte temperature)
+{
+  byte sendBuffer[3] = { 0x4D, 0x00, 0x00 }; // First byte is always 0x4D
+
+  byte temperatures[] = {0, 8, 12, 4, 6, 14, 10, 2, 3, 11, 9, 1, 5, 13 };
+
+  byte OffMsg[] = {0x4D, 0xDE, 0x07 };
+  byte FPMsg[]  = {0xAD, 0xAF, 0xB5 };
+
+  if (operatingMode == MIDEA_AIRCON1_MODE_OFF)
+  {
+    sendMidearaw( OffMsg );
+  }
+  else if (operatingMode == MIDEA_AIRCON1_MODE_FP)
+  {
+    sendMidearaw( FPMsg );
+  }
+  else
+  {
+    sendBuffer[1] = ~fanSpeed;
+
+    if ( operatingMode == MIDEA_AIRCON1_MODE_FAN )
+    {
+      sendBuffer[2] = MIDEA_AIRCON1_MODE_DRY | 0x07;
+    }
+    else
+    {
+      sendBuffer[2] = operatingMode | temperatures[temperature-17];
+    }
+
+    // Send the code
+    sendMidearaw(sendBuffer);
+  }
+}
+
+// Send the Midea raw code
+
+void sendMidearaw(byte sendBuffer[])
+{
+  // 40 kHz PWM frequency
+  enableIROut(40);
+
+  // Header
+  mark(MIDEA_AIRCON1_HDR_MARK);
+  space(MIDEA_AIRCON1_HDR_SPACE);
+
+  // Six bytes, every second byte is a bitwise not of the previous byte
+  for (int i=0; i<3; i++) {
+    sendIRByte(sendBuffer[i], MIDEA_AIRCON1_BIT_MARK, MIDEA_AIRCON1_ZERO_SPACE, MIDEA_AIRCON1_ONE_SPACE);
+    sendIRByte(~sendBuffer[i], MIDEA_AIRCON1_BIT_MARK, MIDEA_AIRCON1_ZERO_SPACE, MIDEA_AIRCON1_ONE_SPACE);
+  }
+
+  // Pause
+
+  mark(MIDEA_AIRCON1_BIT_MARK);
+  space(MIDEA_AIRCON1_MSG_SPACE);
+
+  // Header, two last bytes repeated
+
+  mark(MIDEA_AIRCON1_HDR_MARK);
+  space(MIDEA_AIRCON1_HDR_SPACE);
+
+  // Six bytes, every second byte is a bitwise not of the previous byte
+  for (int i=0; i<3; i++) {
+    sendIRByte(sendBuffer[i], MIDEA_AIRCON1_BIT_MARK, MIDEA_AIRCON1_ZERO_SPACE, MIDEA_AIRCON1_ONE_SPACE);
+    sendIRByte(~sendBuffer[i], MIDEA_AIRCON1_BIT_MARK, MIDEA_AIRCON1_ZERO_SPACE, MIDEA_AIRCON1_ONE_SPACE);
+  }
+
+  // End mark
+
+  mark(MIDEA_AIRCON1_BIT_MARK);
+  space(0);
+}
+
+//DKE code end
+
+//****************************************************************
+// Send a byte over IR - tell arduino how to send built code
+//****************************************************************
 
 void sendIRByte(byte sendByte, int bitMarkLength, int zeroSpaceLength, int oneSpaceLength)
 {
@@ -215,30 +392,20 @@ void enableIROut(int khz) {
 }
 
 
-// Parse the xPL message and send Panasonic CKP IR codes <- not us!
-// in our case parse the input and send the CKP IR codes
+//******************************************************
+// Receive instructions form external source (serial port/esp module/pin state)
+//******************************************************
+// parse the input so appropriate code is built and can be sent
 
 //void sendCKPCmd(xPL_Message * message)
 //{
 //  int param = 0;
 //  byte i;
 
-//Need some shit in here for listening to on or off switch eg
-// if (Serial.readBytes(char[]) == ON){
 
-  // Sensible defaults for the heat pump mode
-
-  byte powerMode     = true;
-  byte operatingMode = PANASONIC_AIRCON1_MODE_HEAT | PANASONIC_AIRCON1_MODE_KEEP;
-  byte fanSpeed      = PANASONIC_AIRCON1_FAN_AUTO;
-  byte temperature   = 24;
-  byte swingV        = PANASONIC_AIRCON1_VS_UP;
-  byte swingH        = PANASONIC_AIRCON1_HS_AUTO;
-  
-//}
 
 // Turn the fucker off
-// if (Serial.readBytes(char[]) == OFF){
+
 //  byte powerMode     = false;
 //  byte operatingMode = PANASONIC_AIRCON1_MODE_HEAT | PANASONIC_AIRCON1_MODE_KEEP;
 //  byte fanSpeed      = PANASONIC_AIRCON1_FAN_AUTO;
@@ -261,12 +428,82 @@ void setup()
 
 //Send it all
 void loop() {
-if (Serial.read() != -1) {
-  Serial.println("Set heatpump in Hot mode, auto fan swing with temp at 24 and turn on.");
-  sendPanasonicCKP(operatingMode, fanSpeed, temperature, swingV, swingH);
-  delay(3000); // Sleep 3 seconds between the messages
-  sendPanasonicCKPOnOff(powerMode);
-  }
+  #define CKP_on
+//  #define CKP_off
+//  #define DKE_on
+//  #define DKE_off
+//  #define DAI_on
+//  #define DAI_off
+
+  #ifdef CKP_on
+  if (Serial.read() != -1) {
+    Serial.println("Set heatpump in Hot mode, auto fan swing with temp at 24 and turn on.");
+      //Need some shit in here for listening to on or off switch eg
+      // if pin in 'state' do on, else if pin in 'state' off do off, else start again...
+      // Sensible defaults for the heat pump mode
+      byte powerMode     = true;
+      byte operatingMode = PANASONIC_AIRCON1_MODE_HEAT | PANASONIC_AIRCON1_MODE_KEEP;
+      byte fanSpeed      = PANASONIC_AIRCON1_FAN_AUTO;
+      byte temperature   = 24;
+      byte swingV        = PANASONIC_AIRCON1_VS_UP;
+      byte swingH        = PANASONIC_AIRCON1_HS_AUTO;     
+    sendPanasonicCKP(operatingMode, fanSpeed, temperature, swingV, swingH);
+    delay(3000); // Sleep 3 seconds between the messages
+    sendPanasonicCKPOnOff(powerMode);
+    }
+  #endif 
+  
+  #ifdef CKP_off
+  if (Serial.read() != -1) {
+    Serial.println("Set heatpump in Hot mode, auto fan swing with temp at 24 and turn on.");
+      //Need some shit in here for listening to on or off switch eg
+      // if pin in 'state' do on, else if pin in 'state' off do off, else start again...
+      // Sensible defaults for the heat pump mode
+      byte powerMode     = false;
+      byte operatingMode = PANASONIC_AIRCON1_MODE_HEAT | PANASONIC_AIRCON1_MODE_KEEP;
+      byte fanSpeed      = PANASONIC_AIRCON1_FAN_AUTO;
+      byte temperature   = 24;
+      byte swingV        = PANASONIC_AIRCON1_VS_UP;
+      byte swingH        = PANASONIC_AIRCON1_HS_AUTO;     
+    sendPanasonicCKP(operatingMode, fanSpeed, temperature, swingV, swingH);
+    delay(3000); // Sleep 3 seconds between the messages
+    sendPanasonicCKPOnOff(powerMode);
+    }
+  #endif  
+ 
+ #ifdef DKE_on
+  if (Serial.read() != -1) {
+    Serial.println("Set heatpump in Hot mode, auto fan swing with temp at 24 and turn on."); 
+      byte operatingMode = PANASONIC_AIRCON2_TIMER_CNL;
+      // byte operatingMode = PANASONIC_AIRCON2_MODE_ON;
+      byte fanSpeed      = PANASONIC_AIRCON2_FAN_AUTO;
+      byte temperature   = 23;
+      byte swingV        = PANASONIC_AIRCON2_VS_UP;
+      byte swingH        = PANASONIC_AIRCON2_HS_AUTO;
+    sendPanasonicDKE(operatingMode, fanSpeed, temperature, swingV, swingH);  
+  } 
+ #endif 
+ 
+ #ifdef DKE_off
+  if (Serial.read() != -1) {
+    Serial.println("Set heatpump in Hot mode, auto fan swing with temp at 24 and turn on."); 
+      byte operatingMode = PANASONIC_AIRCON2_TIMER_CNL;
+      // byte operatingMode = PANASONIC_AIRCON2_MODE_OFF;
+      byte fanSpeed      = PANASONIC_AIRCON2_FAN_AUTO;
+      byte temperature   = 23;
+      byte swingV        = PANASONIC_AIRCON2_VS_UP;
+      byte swingH        = PANASONIC_AIRCON2_HS_AUTO;
+    sendPanasonicDKE(operatingMode, fanSpeed, temperature, swingV, swingH);
+  }  
+ #endif
+ 
+ #ifdef DAI_on
+
+ #endif 
+ 
+ #ifdef DAI_off
+
+ #endif
 }
 
 
